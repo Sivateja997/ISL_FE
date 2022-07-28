@@ -1,0 +1,206 @@
+---
+title: "R Notebook"
+output:
+  word_document: default
+  html_notebook: default
+---
+
+___8. In the lab, a classification tree was applied to the Carseats data set after converting Sales into a qualitative response variable. Now we will seek to predict Sales using regression trees and related approaches, treating the response as a quantitative variable.___
+
+(a) Split the data set into a training set and a test set.
+
+```{r}
+library(ISLR)
+attach(Carseats)
+set.seed(1)
+
+train = sample(dim(Carseats)[1], dim(Carseats)[1]/2)
+Carseats.train = Carseats[train, ]
+Carseats.test = Carseats[-train, ]
+```
+
+(b) Fit a regression tree to the training set. Plot the tree, and interpret the results. What test MSE do you obtain?
+
+```{r}
+library(tree)
+tree.carseats = tree(Sales ~ ., data = Carseats.train)
+summary(tree.carseats)
+```
+
+```{r}
+plot(tree.carseats)
+text(tree.carseats, pretty = 0)
+```
+
+```{r}
+pred.carseats = predict(tree.carseats, Carseats.test)
+mean((Carseats.test$Sales - pred.carseats)^2)
+```
+The test MSE is about 4.92.
+
+(c) Use cross-validation in order to determine the optimal level of tree complexity. Does pruning the tree improve the test MSE?
+
+```{r}
+cv.carseats = cv.tree(tree.carseats, FUN = prune.tree)
+par(mfrow = c(1, 2))
+plot(cv.carseats$size, cv.carseats$dev, type = "b")
+plot(cv.carseats$k, cv.carseats$dev, type = "b")
+```
+
+```{r}
+
+# Best size = 9
+pruned.carseats = prune.tree(tree.carseats, best = 9)
+par(mfrow = c(1, 1))
+plot(pruned.carseats)
+text(pruned.carseats, pretty = 0)
+```
+
+```{r}
+pred.pruned = predict(pruned.carseats, Carseats.test)
+mean((Carseats.test$Sales - pred.pruned)^2)
+```
+Pruning the tree in this case increases the test MSE to 4.91.
+
+(d) Use the bagging approach in order to analyze this data. What test MSE do you obtain? Use the importance() function to determine which variables are most important.
+
+```{r}
+library(randomForest)
+```
+
+```{r}
+bag.carseats = randomForest(Sales ~ ., data = Carseats.train, mtry = 10, ntree = 500, 
+    importance = T)
+bag.pred = predict(bag.carseats, Carseats.test)
+mean((Carseats.test$Sales - bag.pred)^2)
+```
+
+```{r}
+importance(bag.carseats)
+```
+Bagging improves the test MSE to 2.65. We also see that Price, ShelveLoc and Age are three most important predictors of Sale.
+
+(e) Use random forests to analyze this data. What test MSE do you obtain? Use the importance() function to determine which variables are most important. Describe the effect of m, the number of variables considered at each split, on the error rate obtained.
+
+```{r}
+rf.carseats = randomForest(Sales ~ ., data = Carseats.train, mtry = 5, ntree = 500, 
+    importance = T)
+rf.pred = predict(rf.carseats, Carseats.test)
+mean((Carseats.test$Sales - rf.pred)^2)
+```
+
+```{r}
+importance(rf.carseats)
+```
+In this case, random forest worsens the MSE on test set to 2.70. Changing m varies test MSE between 2.65 to 3. We again see that Price, ShelveLoc and Age are three most important predictors of Sale.
+
+
+___10. We now use boosting to predict Salary in the Hitters data set.___
+
+(a) Remove the observations for whom the salary information is unknown, and then log-transform the salaries.
+
+```{r}
+library(ISLR)
+sum(is.na(Hitters$Salary))
+```
+```{r}
+Hitters = Hitters[-which(is.na(Hitters$Salary)), ]
+sum(is.na(Hitters$Salary))
+```
+```{r}
+Hitters$Salary = log(Hitters$Salary)
+```
+
+(b) Create a training set consisting of the first 200 observations, and a test set consisting of the remaining observations.
+
+```{r}
+train = 1:200
+Hitters.train = Hitters[train, ]
+Hitters.test = Hitters[-train, ]
+```
+
+(c) Perform boosting on the training set with 1,000 trees for a range of values of the shrinkage parameter λ. Produce a plot with different shrinkage values on the x-axis and the corresponding training set MSE on the y-axis.
+
+```{r}
+library(gbm)
+```
+
+```{r}
+set.seed(103)
+pows = seq(-10, -0.2, by = 0.1)
+lambdas = 10^pows
+length.lambdas = length(lambdas)
+train.errors = rep(NA, length.lambdas)
+test.errors = rep(NA, length.lambdas)
+for (i in 1:length.lambdas) {
+    boost.hitters = gbm(Salary ~ ., data = Hitters.train, distribution = "gaussian", 
+        n.trees = 1000, shrinkage = lambdas[i])
+    train.pred = predict(boost.hitters, Hitters.train, n.trees = 1000)
+    test.pred = predict(boost.hitters, Hitters.test, n.trees = 1000)
+    train.errors[i] = mean((Hitters.train$Salary - train.pred)^2)
+    test.errors[i] = mean((Hitters.test$Salary - test.pred)^2)
+}
+
+plot(lambdas, train.errors, type = "b", xlab = "Shrinkage", ylab = "Train MSE", 
+    col = "blue", pch = 20)
+```
+
+(d) Produce a plot with different shrinkage values on the x-axis and the corresponding test set MSE on the y-axis.
+
+```{r}
+plot(lambdas, test.errors, type = "b", xlab = "Shrinkage", ylab = "Test MSE", col = "red", pch = 20)
+```
+
+```{r}
+min(test.errors)
+```
+```{r}
+lambdas[which.min(test.errors)]
+```
+Minimum test error is obtained at λ=0.05.
+
+(e) Compare the test MSE of boosting to the test MSE that results from applying two of the regression approaches seen in Chapters 3 and 6.
+
+```{r}
+lm.fit = lm(Salary ~ ., data = Hitters.train)
+lm.pred = predict(lm.fit, Hitters.test)
+mean((Hitters.test$Salary - lm.pred)^2)
+```
+
+```{r}
+library(glmnet)
+```
+
+```{r}
+set.seed(134)
+x = model.matrix(Salary ~ ., data = Hitters.train)
+y = Hitters.train$Salary
+x.test = model.matrix(Salary ~ ., data = Hitters.test)
+lasso.fit = glmnet(x, y, alpha = 1)
+lasso.pred = predict(lasso.fit, s = 0.01, newx = x.test)
+mean((Hitters.test$Salary - lasso.pred)^2)
+```
+Both linear model and regularization like Lasso have higher test MSE than boosting.
+
+(f) Which variables appear to be the most important predictors in the boosted model?
+
+```{r}
+boost.best = gbm(Salary ~ ., data = Hitters.train, distribution = "gaussian", 
+    n.trees = 1000, shrinkage = lambdas[which.min(test.errors)])
+summary(boost.best)
+```
+CAtBat, CRBI and CWalks are three most important variables in that order.
+
+(g) Now apply bagging to the training set. What is the test set MSE for this approach?
+
+```{r}
+library(randomForest)
+```
+
+```{r}
+set.seed(21)
+rf.hitters = randomForest(Salary ~ ., data = Hitters.train, ntree = 500, mtry = 19)
+rf.pred = predict(rf.hitters, Hitters.test)
+mean((Hitters.test$Salary - rf.pred)^2)
+```
+Test MSE for bagging is about 0.23, which is slightly lower than the best test MSE for boosting.
